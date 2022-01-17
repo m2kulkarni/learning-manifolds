@@ -37,8 +37,11 @@ class RNN(object):
 
         self.W_in = 2*np.random.randn(self.N, self.N_input) - 1
         self.W_out = 2*np.random.randn(self.N_out, self.N) - 1
+
     
     def step(self, ext):
+
+        # print(f"{np.dot(self.J, self.z).shape}, {np.dot(self.W_in, ext.T).shape}")
         self.r = self.r + \
                 self.dt/self.tau * \
                 (-self.r + np.dot(self.J, self.z) + np.dot(self.W_in, ext.T))
@@ -52,9 +55,10 @@ class RNN(object):
         else:
             self.ext = I
         
-        plt.plot(self.ext)
-        plt.show()
-
+        if plot:
+            plt.plot(self.ext)
+            plt.show()
+        return self.ext
 
     def simulate(self, T, ext, r0=None):
 
@@ -63,7 +67,6 @@ class RNN(object):
 
         if r0 is None:
             r0 = 2*np.random.randn(self.N)-1.
-
         if ext is None:
             ext = np.zeros((time_steps, self.N_input))
         self.ext = ext
@@ -75,10 +78,56 @@ class RNN(object):
         record_r = np.zeros((time_steps,self.N))
         record_r[0,:] = self.r
         for i in range(time_steps-1):
+            # print(ext[i].shape)
             self.step(self.ext[i])
             record_r[i+1, :] = self.r
         
         return self.z, record_r
+    
+    def initialize_cursor(self, cursor_distance_initial):
+        """
+        cursor == lickport
+        everything in m/s
+        """
+        # self.cursor_velocity = cursor_velocity
+        self.cursor_distance = cursor_distance_initial
+    
+    def learning(self, conditioned_neuron, day_id=None):
+        self.conditioned_neuron =  conditioned_neuron
+        self.current_day_id = day_id
+        self.initialize_cursor(1)
+
+        
+        self.error = self.W_fb @ 
+
+
+
+    def participation_ratio(self, eig_vals):
+        return (np.sum(eig_vals.real)**2)/(np.sum(eig_vals.real**2))
+
+    def calculate_manifold(self, T, trials, I, pulse_end):
+
+        time_steps = I.shape[0]
+        ext = np.zeros((time_steps, self.N_input))
+        ext[:, 0] = I
+
+        npoints = time_steps-pulse_end
+        activity = np.zeros((trials*npoints,self.N))
+        
+        for i in range(trials):
+            z_end, r_simulation = network.simulate(T, ext=ext)
+            z_simulation = np.tanh(r_simulation)
+            activity[i*npoints:(i+1)*npoints, :] = z_simulation[pulse_end:, :]
+            print(f"{i+1} completed")
+
+        print(f"time_steps={time_steps}, npoints={npoints}, trials={trials}, activity.shape={activity.shape}")
+
+        cov = np.cov(activity.T)
+        eig_val, eig_vec = np.linalg.eig(cov)
+        pr = self.participation_ratio(eig_val)
+        activity_manifold = activity @ eig_vec
+
+        return activity_manifold, activity, eig_val, eig_vec, pr, cov
     
 N = 500
 g = 1.5
@@ -95,11 +144,28 @@ def square_wave(amplitude, start, end, T, dt):
     assert(end <= time_steps)
     wave[start:end] = amplitude
     return wave
-    
-I = square_wave(1, 40, 80, T, dt)
+
+pulse_amplitude = 1
+pulse_start = 10    
+pulse_end = 30
+pulse_length = pulse_end-pulse_start
+I = square_wave(pulse_amplitude, pulse_start, pulse_end, T, dt)
+
 network = RNN(N=N,g=g,p=p,tau=tau,dt=dt,N_input=N_in, T=T)
 network.add_input(I)
 z_end, r_simulation = network.simulate(T, ext=None)
+activity_manifold, activity, eig_val, eig_vec, pr, cov = network.calculate_manifold(T, 10, I, pulse_end=pulse_end)
 
-putils.plot_dynamics(r_simulation)
-putils.plot_dynamics_ordered(r_simulation, criteria="max", sort="descending")
+print(f"Participation Ratio: {pr}")
+print(np.where(np.cumsum(eig_val.real)/np.sum(eig_val.real)>0.9)[0][0])
+# plt.plot(np.cumsum(eig_val.real)/np.sum(eig_val.real))
+# plt.show()
+
+# putils.plot_dynamics(r_simulation)
+# putils.plot_dynamics_ordered(r_simulation, criteria="max", sort="descending")
+
+
+"""
+simulate → calculate manifold → feedback learning with cursor velocity → simulate → calculate manifold →   
+day 1 complete → repeat for day 2 with different conditioned neuron
+"""
