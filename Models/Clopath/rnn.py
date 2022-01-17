@@ -1,3 +1,4 @@
+from time import time_ns
 from turtle import pu
 import numpy as np
 import matplotlib.pyplot as plt
@@ -37,6 +38,7 @@ class RNN(object):
 
         self.W_in = 2*np.random.randn(self.N, self.N_input) - 1
         self.W_out = 2*np.random.randn(self.N_out, self.N) - 1
+        self.W_fb = 2*np.random.randn(self.N, 1) - 1
 
     
     def step(self, ext):
@@ -88,19 +90,56 @@ class RNN(object):
         """
         cursor == lickport
         everything in m/s
+
+        cursor_velocity must be dependent on CN activity but right now we just let it be constant
         """
-        # self.cursor_velocity = cursor_velocity
+        self.cursor_velocity = 0.05
         self.cursor_distance = cursor_distance_initial
+        self.cursor_distance_initial = cursor_distance_initial
     
-    def learning(self, conditioned_neuron, day_id=None):
+    def learning(self, T, ext, conditioned_neuron, r0=None, day_id=None):
+
         self.conditioned_neuron =  conditioned_neuron
         self.current_day_id = day_id
         self.initialize_cursor(1)
+        time_steps = int(T/self.dt)
+        self.P = np.eye(self.N, self.N)*0.05
 
+        if r0 is None:
+            r0 = 2*np.random.randn(self.N)-1.
+        if ext is None:
+            ext = np.zeros((time_steps, self.N_input))
+        self.ext = ext
+
+        self.r = r0 # remember to give previous trial r0 to the network
+        self.z = np.tanh(self.r)
         
-        self.error = self.W_fb @ 
+        record_r = np.zeros((time_steps, self.N))
+        record_r[0,:] = self.r
 
+        for i in range(time_steps-1):
+            """
+            abcdefghijklmnopqrstuvwxyz
+            """
+            error_val = self.cursor_distance*0.1 # error = a*how far the lickport is + b*how fast is it moving. have to figure out a,b
+            # print(error_val)
+            # print(self.W_fb.shape)
+            self.error = self.W_fb*error_val
 
+            if i%2 == 0:
+                Pr = np.dot(self.P, self.r)
+                self.P -= np.outer(Pr, self.r).dot(self.P)/(1+np.dot(self.r, Pr))
+                self.e_minus = self.error
+                self.dw = np.outer(np.dot(self.P, self.r), self.e_minus)
+                self.J -= self.dw
+            
+            self.step(ext[i])
+            record_r[i+1, :] = self.r
+
+            if self.z[self.conditioned_neuron] >= 0.3:
+                self.cursor_distance -= self.cursor_velocity
+
+        return record_r, np.tanh(record_r)
 
     def participation_ratio(self, eig_vals):
         return (np.sum(eig_vals.real)**2)/(np.sum(eig_vals.real**2))
@@ -156,13 +195,24 @@ network.add_input(I)
 z_end, r_simulation = network.simulate(T, ext=None)
 activity_manifold, activity, eig_val, eig_vec, pr, cov = network.calculate_manifold(T, 10, I, pulse_end=pulse_end)
 
+cn = np.random.choice(np.max(r_simulation[:100, :], axis=0).argsort()[:10])
+
+print(cn)
+# print(r_simulation[, :])
+r_learn, z_learn = network.learning(T, None, conditioned_neuron=cn, r0=r_simulation[-1], day_id=0)
+
+
 print(f"Participation Ratio: {pr}")
 print(np.where(np.cumsum(eig_val.real)/np.sum(eig_val.real)>0.9)[0][0])
 # plt.plot(np.cumsum(eig_val.real)/np.sum(eig_val.real))
 # plt.show()
 
-# putils.plot_dynamics(r_simulation)
-# putils.plot_dynamics_ordered(r_simulation, criteria="max", sort="descending")
+putils.plot_dynamics(np.tanh(r_simulation), cn=cn)
+putils.plot_dynamics_ordered(np.tanh(r_simulation), criteria="max_initial", sort="ascending", cn=cn)
+
+putils.plot_dynamics(np.tanh(r_learn), cn=cn)
+putils.plot_dynamics_ordered(np.tanh(r_learn), criteria="max_initial", sort="ascending", cn=cn)
+
 
 
 """
