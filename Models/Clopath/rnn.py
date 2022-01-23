@@ -157,9 +157,9 @@ class RNN(object):
             z_end, r_simulation = network.simulate(T, ext=ext)
             z_simulation = np.tanh(r_simulation)
             activity[i*npoints:(i+1)*npoints, :] = z_simulation[pulse_end:, :]
-            print(f"{i+1} completed")
+            # print(f"{i+1} completed")
 
-        print(f"time_steps={time_steps}, npoints={npoints}, trials={trials}, activity.shape={activity.shape}")
+        print(f"Calculating Manifold: time_steps={time_steps}, npoints={npoints}, trials={trials}, activity.shape={activity.shape}")
 
         cov = np.cov(activity.T)
         eig_val, eig_vec = np.linalg.eig(cov)
@@ -188,30 +188,37 @@ pulse_amplitude = 1
 pulse_start = 10    
 pulse_end = 30
 pulse_length = pulse_end-pulse_start
+
+# make the input pulse
 I = square_wave(pulse_amplitude, pulse_start, pulse_end, T, dt)
 
+# initialize the network
 network = RNN(N=N,g=g,p=p,tau=tau,dt=dt,N_input=N_in, T=T)
 network.add_input(I)
+
+# simulate the network for T time and find the manifold, eig_vals etc
 z_end, r_simulation = network.simulate(T, ext=None)
 activity_manifold, activity, eig_val, eig_vec, pr, cov = network.calculate_manifold(T, 10, I, pulse_end=pulse_end)
 
+# choose a conditioned neuron as one of the top 10 firing neurons
 cn = np.random.choice(np.max(r_simulation[:100, :], axis=0).argsort()[:10])
-
 print(cn)
-# print(r_simulation[, :])
-r_learn, z_learn = network.learning(T, None, conditioned_neuron=cn, r0=r_simulation[-1], day_id=0)
 
-
+# plot dynamics of network during simulation, ordered and unordered. Also calculate the PR, 90% cutoff var.
+putils.plot_dynamics(np.tanh(r_simulation), cn=cn)
+sorted_array, cn_new_idx = putils.plot_dynamics_ordered(np.tanh(r_simulation), criteria="max_initial", sort="descending", cn=cn)
 print(f"Participation Ratio: {pr}")
 print(np.where(np.cumsum(eig_val.real)/np.sum(eig_val.real)>0.9)[0][0])
-# plt.plot(np.cumsum(eig_val.real)/np.sum(eig_val.real))
-# plt.show()
 
-putils.plot_dynamics(np.tanh(r_simulation), cn=cn)
-putils.plot_dynamics_ordered(np.tanh(r_simulation), criteria="max_initial", sort="ascending", cn=cn)
+# train the network with our learning rule. calculate manifold, eig_vals etc
+r_learn, z_learn = network.learning(T, None, conditioned_neuron=cn, r0=r_simulation[-1], day_id=0)
+activity_manifold, activity, eig_val, eig_vec, pr, cov = network.calculate_manifold(T, 10, I, pulse_end=pulse_end)
 
+# plot activity of network at the end of learning trials, normal and ordered. Calculate PR, 90% cutoff var, etc
 putils.plot_dynamics(np.tanh(r_learn), cn=cn)
-putils.plot_dynamics_ordered(np.tanh(r_learn), criteria="max_initial", sort="ascending", cn=cn)
+sorted_array, cn_new_idx = putils.plot_dynamics_ordered(np.tanh(r_learn), criteria="max_initial", sort="descending", cn=cn)
+print(f"Participation Ratio Final: {pr}")
+print(np.where(np.cumsum(eig_val.real)/np.sum(eig_val.real)>0.9)[0][0])
 
 
 
