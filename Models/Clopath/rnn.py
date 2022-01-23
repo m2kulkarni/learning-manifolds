@@ -2,6 +2,7 @@ from time import time_ns
 from turtle import pu
 import numpy as np
 import matplotlib.pyplot as plt
+from torch import eig
 import plot_utils as putils
 
 class RNN(object):
@@ -20,7 +21,7 @@ class RNN(object):
     """
     def __init__(self, N=500, g=1.5, p=0.1, 
                 tau=0.1, dt=0.01, N_input=2, 
-                N_out=1, T=1):
+                N_out=1, T=1, b=0.01):
 
         self.N = N
         self.g = g
@@ -29,6 +30,7 @@ class RNN(object):
         self.dt = dt
         self.N_input = N_input
         self.N_out = N_out
+        self.b = b
         
         # Make the J matrix
         mask = np.random.rand(self.N,self.N)<self.p
@@ -97,7 +99,7 @@ class RNN(object):
         self.cursor_distance = cursor_distance_initial
         self.cursor_distance_initial = cursor_distance_initial
     
-    def learning(self, T, ext, conditioned_neuron, r0=None, day_id=None):
+    def learning(self, T, ext, conditioned_neuron, r0=None, day_id=None, manifold_eig_vec=None, manifold_eig_vals=None):
 
         self.conditioned_neuron =  conditioned_neuron
         self.current_day_id = day_id
@@ -121,7 +123,19 @@ class RNN(object):
             """
             abcdefghijklmnopqrstuvwxyz
             """
-            error_val = self.cursor_distance*0.1 # error = a*how far the lickport is + b*how fast is it moving. have to figure out a,b
+            
+            if day_id==0:
+                error_val = self.b*(record_r[-1, conditioned_neuron] - np.mean(record_r[-1, :]))
+            
+            else:
+                error_val = self.b*(record_r[-1, conditioned_neuron] - record_r[-1, :]@manifold_eig_vec[:, manifold_eig_vals.argmax()])
+                # this looks good except only 1 max eig_vec is taken, i.e only the first dimension. This is something like
+                # learning vector. ask kayvon
+
+            # error = b*(CN_today(t) - r(t)*Manifold_yesterday) for day 1:x
+            # for day 0, we can keep it 
+            # error = b*(CN_today(t) - average_activity(t-1)). The difference has to be high to compensate for small b value??
+
             # print(error_val)
             # print(self.W_fb.shape)
             self.error = self.W_fb*error_val
@@ -200,6 +214,7 @@ network.add_input(I)
 z_end, r_simulation = network.simulate(T, ext=None)
 activity_manifold, activity, eig_val, eig_vec, pr, cov = network.calculate_manifold(T, 10, I, pulse_end=pulse_end)
 
+
 # choose a conditioned neuron as one of the top 10 firing neurons
 cn = np.random.choice(np.max(r_simulation[:100, :], axis=0).argsort()[:10])
 print(cn)
@@ -220,7 +235,14 @@ sorted_array, cn_new_idx = putils.plot_dynamics_ordered(np.tanh(r_learn), criter
 print(f"Participation Ratio Final: {pr}")
 print(np.where(np.cumsum(eig_val.real)/np.sum(eig_val.real)>0.9)[0][0])
 
+r_learn, z_learn = network.learning(T, None, conditioned_neuron=cn, r0=r_simulation[-1], day_id=1, manifold_eig_vec=eig_vec, manifold_eig_vals=eig_val)
+activity_manifold, activity, eig_val, eig_vec, pr, cov = network.calculate_manifold(T, 10, I, pulse_end=pulse_end)
 
+# plot activity of network at the end of learning trials, normal and ordered. Calculate PR, 90% cutoff var, etc
+putils.plot_dynamics(np.tanh(r_learn), cn=cn)
+sorted_array, cn_new_idx = putils.plot_dynamics_ordered(np.tanh(r_learn), criteria="max_initial", sort="descending", cn=cn)
+print(f"Participation Ratio Final: {pr}")
+print(np.where(np.cumsum(eig_val.real)/np.sum(eig_val.real)>0.9)[0][0])
 
 """
 simulate → calculate manifold → feedback learning with cursor velocity → simulate → calculate manifold →   
