@@ -1,3 +1,4 @@
+from distutils.log import error
 import numpy as np
 import matplotlib.pyplot as plt
 import plot_utils as putils
@@ -122,13 +123,14 @@ class RNN(object):
             """
             
             if day_id==0:
-                error_val = self.b*(record_r[-1, conditioned_neuron] - np.mean(record_r[-1, :]))
+                error_val = self.b*(record_r[i, conditioned_neuron] - np.mean(record_r[i, :]))
             
             else:
-                error_val = self.b*(record_r[-1, conditioned_neuron] - record_r[-1, :]@manifold_eig_vec[:, manifold_eig_vals.argmax()])
+                error_val = self.b*(record_r[i, conditioned_neuron] - record_r[i, :]@manifold_eig_vec[:, manifold_eig_vals.argmax()])
                 # this looks good except only 1 max eig_vec is taken, i.e only the first dimension. This is something like
                 # learning vector. ask kayvon
 
+            # print(error_val, record_r[i, conditioned_neuron])
             # error = b*(CN_today(t) - r(t)*Manifold_yesterday) for day 1:x
             # for day 0, we can keep it 
             # error = b*(CN_today(t) - average_activity(t-1)). The difference has to be high to compensate for small b value??
@@ -165,7 +167,7 @@ class RNN(object):
         activity = np.zeros((trials*npoints,self.N))
         
         for i in range(trials):
-            z_end, r_simulation = network.simulate(T, ext=ext)
+            z_end, r_simulation = self.simulate(T, ext=ext)
             z_simulation = np.tanh(r_simulation)
             activity[i*npoints:(i+1)*npoints, :] = z_simulation[pulse_end:, :]
             # print(f"{i+1} completed")
@@ -178,14 +180,6 @@ class RNN(object):
         activity_manifold = activity @ eig_vec
 
         return activity_manifold, activity, eig_val, eig_vec, pr, cov
-    
-N = 500
-g = 1.5
-p = 0.1
-tau = 0.1
-dt = 0.01
-N_in = 2
-T = 5
 
 def square_wave(amplitude, start, end, T, dt):
 
@@ -195,6 +189,46 @@ def square_wave(amplitude, start, end, T, dt):
     wave[start:end] = amplitude
     return wave
 
+def initialize_network():
+    # initialize the network
+    network = RNN(N=N,g=g,p=p,tau=tau,dt=dt,N_input=N_in, T=T)
+    network.add_input(I)
+    # simulate the network for T time and find the manifold, eig_vals etc
+    z_end, r_simulation = network.simulate(T, ext=None)
+    dict_manifold.append(network.calculate_manifold(T, 10, I, pulse_end=pulse_end))
+
+    # choose a conditioned neuron as one of the top 10 firing neurons
+    cn = np.random.choice(np.max(r_simulation[:100, :], axis=0).argsort()[:10])
+    print(cn)
+
+    return network, r_simulation, cn
+
+def plot_simulation(r_simulation, cn, pr):
+    # plot dynamics of network during simulation, ordered and unordered. Also calculate the PR, 90% cutoff var.
+    putils.plot_dynamics(np.tanh(r_simulation), cn=cn)  
+    sorted_array, cn_new_idx = putils.plot_dynamics_ordered(np.tanh(r_simulation), criteria="max_initial", sort="descending", cn=cn)
+    print(f"Participation Ratio: {pr}")
+    # print(np.where(np.cumsum(eig_val.real)/np.sum(eig_val.real)>0.9)[0][0])
+
+    return sorted_array, cn_new_idx
+
+def simulate_day(network, r_simulation, cn, day_id, input=None):
+    # train the network with our learning rule. calculate manifold, eig_vals etc
+    r_learn, z_learn = network.learning(T, None, conditioned_neuron=cn, r0=r_simulation[-1], day_id=day_id, manifold_eig_vec=dict_manifold[-1][3], manifold_eig_vals=dict_manifold[-1][2])
+    dict_manifold.append(network.calculate_manifold(T, 10, I, pulse_end=pulse_end))
+    return r_learn
+
+N = 500
+g = 1.5
+p = 0.1
+tau = 0.1
+dt = 0.01
+N_in = 2
+T = 5
+n_days = 3
+dict_manifold = []
+print(dict_manifold)
+
 pulse_amplitude = 1
 pulse_start = 10    
 pulse_end = 30
@@ -203,43 +237,15 @@ pulse_length = pulse_end-pulse_start
 # make the input pulse
 I = square_wave(pulse_amplitude, pulse_start, pulse_end, T, dt)
 
-# initialize the network
-network = RNN(N=N,g=g,p=p,tau=tau,dt=dt,N_input=N_in, T=T)
-network.add_input(I)
+network, r_simulation, cn = initialize_network()
+plot_simulation(r_simulation, cn, dict_manifold[0][4])
 
-# simulate the network for T time and find the manifold, eig_vals etc
-z_end, r_simulation = network.simulate(T, ext=None)
-activity_manifold, activity, eig_val, eig_vec, pr, cov = network.calculate_manifold(T, 10, I, pulse_end=pulse_end)
+# print(r_simulation[-1])
 
-
-# choose a conditioned neuron as one of the top 10 firing neurons
-cn = np.random.choice(np.max(r_simulation[:100, :], axis=0).argsort()[:10])
-print(cn)
-
-# plot dynamics of network during simulation, ordered and unordered. Also calculate the PR, 90% cutoff var.
-putils.plot_dynamics(np.tanh(r_simulation), cn=cn)
-sorted_array, cn_new_idx = putils.plot_dynamics_ordered(np.tanh(r_simulation), criteria="max_initial", sort="descending", cn=cn)
-print(f"Participation Ratio: {pr}")
-print(np.where(np.cumsum(eig_val.real)/np.sum(eig_val.real)>0.9)[0][0])
-
-# train the network with our learning rule. calculate manifold, eig_vals etc
-r_learn, z_learn = network.learning(T, None, conditioned_neuron=cn, r0=r_simulation[-1], day_id=0)
-activity_manifold, activity, eig_val, eig_vec, pr, cov = network.calculate_manifold(T, 10, I, pulse_end=pulse_end)
-
-# plot activity of network at the end of learning trials, normal and ordered. Calculate PR, 90% cutoff var, etc
-putils.plot_dynamics(np.tanh(r_learn), cn=cn)
-sorted_array, cn_new_idx = putils.plot_dynamics_ordered(np.tanh(r_learn), criteria="max_initial", sort="descending", cn=cn)
-print(f"Participation Ratio Final: {pr}")
-print(np.where(np.cumsum(eig_val.real)/np.sum(eig_val.real)>0.9)[0][0])
-
-r_learn, z_learn = network.learning(T, None, conditioned_neuron=cn, r0=r_simulation[-1], day_id=1, manifold_eig_vec=eig_vec, manifold_eig_vals=eig_val)
-activity_manifold, activity, eig_val, eig_vec, pr, cov = network.calculate_manifold(T, 10, I, pulse_end=pulse_end)
-
-# plot activity of network at the end of learning trials, normal and ordered. Calculate PR, 90% cutoff var, etc
-putils.plot_dynamics(np.tanh(r_learn), cn=cn)
-sorted_array, cn_new_idx = putils.plot_dynamics_ordered(np.tanh(r_learn), criteria="max_initial", sort="descending", cn=cn)
-print(f"Participation Ratio Final: {pr}")
-print(np.where(np.cumsum(eig_val.real)/np.sum(eig_val.real)>0.9)[0][0])
+r_learn = r_simulation
+for i in range(n_days):
+    r_learn = simulate_day(network, r_learn, cn, i+1, input=I)
+    plot_simulation(r_learn, cn, dict_manifold[i][4])
 
 """
 simulate → calculate manifold → feedback learning with cursor velocity → simulate → calculate manifold →   
