@@ -1,4 +1,3 @@
-from tkinter import Grid
 from matplotlib import gridspec
 import numpy as np
 import matplotlib.pyplot as plt
@@ -12,6 +11,7 @@ def plot_dynamics(recordings, cn=None):
     gs = GridSpec(nrows=2, ncols=1, height_ratios=[1,4])
     ax0 = fig.add_subplot(gs[0, 0])
     ax0.plot(recordings[:, cn])
+    ax0.set_ylim(-1., 1.)
 
     ax1 = fig.add_subplot(gs[1, 0])
     im = ax1.imshow(recordings.T, aspect="auto", cmap="Spectral", origin="lower")

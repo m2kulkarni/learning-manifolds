@@ -1,4 +1,4 @@
-from distutils.log import error
+# from distutils.log import error
 import numpy as np
 import matplotlib.pyplot as plt
 import plot_utils as putils
@@ -123,10 +123,10 @@ class RNN(object):
             """
             
             if day_id==0:
-                error_val = self.b*(record_r[i, conditioned_neuron] - np.mean(record_r[i, :]))
+                error_val = self.b*(np.tanh(record_r[i, conditioned_neuron]) - np.tanh(np.mean(record_r[i, :])))
             
             else:
-                error_val = self.b*(record_r[i, conditioned_neuron] - record_r[i, :]@manifold_eig_vec[:, manifold_eig_vals.argmax()])
+                error_val = self.b*(np.tanh(record_r[i, conditioned_neuron]) - np.tanh(record_r[i, :]@manifold_eig_vec[:, manifold_eig_vals.argmax()]))
                 # this looks good except only 1 max eig_vec is taken, i.e only the first dimension. This is something like
                 # learning vector. ask kayvon
 
@@ -214,9 +214,10 @@ def plot_simulation(r_simulation, cn, pr):
 
 def simulate_day(network, r_simulation, cn, day_id, input=None):
     # train the network with our learning rule. calculate manifold, eig_vals etc
+    cn = np.random.choice(np.max(r_simulation[:100, :], axis=0).argsort()[:10])
     r_learn, z_learn = network.learning(T, None, conditioned_neuron=cn, r0=r_simulation[-1], day_id=day_id, manifold_eig_vec=dict_manifold[-1][3], manifold_eig_vals=dict_manifold[-1][2])
     dict_manifold.append(network.calculate_manifold(T, 10, I, pulse_end=pulse_end))
-    return r_learn
+    return r_learn, cn
 
 N = 500
 g = 1.5
@@ -227,7 +228,7 @@ N_in = 2
 T = 5
 n_days = 3
 dict_manifold = []
-print(dict_manifold)
+list_cn = []
 
 pulse_amplitude = 1
 pulse_start = 10    
@@ -238,13 +239,15 @@ pulse_length = pulse_end-pulse_start
 I = square_wave(pulse_amplitude, pulse_start, pulse_end, T, dt)
 
 network, r_simulation, cn = initialize_network()
+list_cn.append(cn)
 plot_simulation(r_simulation, cn, dict_manifold[0][4])
 
 # print(r_simulation[-1])
 
 r_learn = r_simulation
 for i in range(n_days):
-    r_learn = simulate_day(network, r_learn, cn, i+1, input=I)
+    r_learn, cn = simulate_day(network, r_learn, cn, i+1, input=I)
+    list_cn.append(cn)
     plot_simulation(r_learn, cn, dict_manifold[i][4])
 
 """
