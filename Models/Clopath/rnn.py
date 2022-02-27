@@ -219,7 +219,7 @@ def simulate_day(network, r_simulation, cn, day_id, input=None):
     dict_manifold.append(network.calculate_manifold(T, 10, I, pulse_end=pulse_end))
     return r_learn, cn
 
-N = 500
+N = 1000
 g = 1.5
 p = 0.1
 tau = 0.1
