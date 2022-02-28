@@ -1,4 +1,3 @@
-# from distutils.log import error
 import numpy as np
 import matplotlib.pyplot as plt
 import plot_utils as putils
@@ -197,16 +196,17 @@ def initialize_network():
     z_end, r_simulation = network.simulate(T, ext=None)
     dict_manifold.append(network.calculate_manifold(T, 10, I, pulse_end=pulse_end))
 
-    # choose a conditioned neuron as one of the top 10 firing neurons
-    cn = np.random.choice(np.max(r_simulation[:100, :], axis=0).argsort()[:10])
-    print(cn)
+    # choose a conditioned neuron as one of the top 10 firing neurons -- not doing this
+    # choose a conditioned neuron as one which does not spike much. middle of the activity plot
+    cn = np.random.choice(np.mean(r_simulation[:100, :], axis=0).argsort()[N//2: N//2+50])
+    print(f"Initialized Network with Conditioned Neuron at index {cn}")
 
     return network, r_simulation, cn
 
-def plot_simulation(r_simulation, cn, pr):
+def plot_simulation(r_simulation, list_cn, pr):
     # plot dynamics of network during simulation, ordered and unordered. Also calculate the PR, 90% cutoff var.
-    putils.plot_dynamics(np.tanh(r_simulation), cn=cn)  
-    sorted_array, cn_new_idx = putils.plot_dynamics_ordered(np.tanh(r_simulation), criteria="max_initial", sort="descending", cn=cn)
+    putils.plot_dynamics(np.tanh(r_simulation), list_cn=list_cn)  
+    sorted_array, cn_new_idx = putils.plot_dynamics_ordered(np.tanh(r_simulation), criteria="max_initial", sort="descending", list_cn=list_cn)
     print(f"Participation Ratio: {pr}")
     # print(np.where(np.cumsum(eig_val.real)/np.sum(eig_val.real)>0.9)[0][0])
 
@@ -214,19 +214,23 @@ def plot_simulation(r_simulation, cn, pr):
 
 def simulate_day(network, r_simulation, cn, day_id, input=None):
     # train the network with our learning rule. calculate manifold, eig_vals etc
-    cn = np.random.choice(np.max(r_simulation[:100, :], axis=0).argsort()[:10])
+
+    # change the cn, choose a low activity neuron as conditioned neuron for other days
+    cn = np.random.choice(np.mean(r_simulation[:100, :], axis=0).argsort()[N//2-50:N//2])
+    print(f"Condioned Neuron on Day {day_id}: {cn}")
+
     r_learn, z_learn = network.learning(T, None, conditioned_neuron=cn, r0=r_simulation[-1], day_id=day_id, manifold_eig_vec=dict_manifold[-1][3], manifold_eig_vals=dict_manifold[-1][2])
     dict_manifold.append(network.calculate_manifold(T, 10, I, pulse_end=pulse_end))
     return r_learn, cn
 
-N = 1000
-g = 1.5
+N = 500
+g = 1.2
 p = 0.1
 tau = 0.1
 dt = 0.01
-N_in = 2
-T = 5
-n_days = 3
+N_in = 1
+T = 10
+n_days = 2
 dict_manifold = []
 list_cn = []
 
@@ -240,7 +244,8 @@ I = square_wave(pulse_amplitude, pulse_start, pulse_end, T, dt)
 
 network, r_simulation, cn = initialize_network()
 list_cn.append(cn)
-plot_simulation(r_simulation, cn, dict_manifold[0][4])
+print(list_cn)
+plot_simulation(r_simulation, list_cn, dict_manifold[0][4])
 
 # print(r_simulation[-1])
 
@@ -248,7 +253,7 @@ r_learn = r_simulation
 for i in range(n_days):
     r_learn, cn = simulate_day(network, r_learn, cn, i+1, input=I)
     list_cn.append(cn)
-    plot_simulation(r_learn, cn, dict_manifold[i][4])
+    plot_simulation(r_learn, list_cn, dict_manifold[i][4])
 
 """
 simulate → calculate manifold → feedback learning with cursor velocity → simulate → calculate manifold →   
