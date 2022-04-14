@@ -1,4 +1,5 @@
 import numpy as np
+from matplotlib.gridspec import GridSpec
 import matplotlib.pyplot as plt
 import plot_utils as putils
 
@@ -18,7 +19,7 @@ class RNN(object):
     """
     def __init__(self, N=500, g=1.5, p=0.1, 
                 tau=0.1, dt=0.01, N_input=2, 
-                N_out=1, T=1, b=0.01):
+                N_out=1, T=1, b=0.1):
 
         self.N = N
         self.g = g
@@ -34,6 +35,9 @@ class RNN(object):
         np.fill_diagonal(mask,np.zeros(self.N))
         self.mask = mask
         self.J = self.g / np.sqrt(self.p*self.N) * np.random.randn(self.N,self.N) * mask
+
+        # no mask
+        # self.J = self.g / np.sqrt(self.p*self.N) * np.random.randn(self.N,self.N)
 
         self.W_in = 2*np.random.randn(self.N, self.N_input) - 1
         self.W_out = 2*np.random.randn(self.N_out, self.N) - 1
@@ -51,7 +55,7 @@ class RNN(object):
     
     def add_input(self, I, plot=False):
         self.ext = np.zeros((int(T/dt), self.N_input))
-        if I.shape[-1] == 1:
+        if I.ndim == 1:
             self.ext[:, 0] = I
         else:
             self.ext = I
@@ -61,17 +65,18 @@ class RNN(object):
             plt.show()
         return self.ext
 
-    def simulate(self, T, ext, r0=None):
+    def simulate(self, T, r0=None):
 
         time = np.arange(0, T, self.dt)
         time_steps = len(time)
 
         if r0 is None:
             r0 = 2*np.random.randn(self.N)-1.
-        if ext is None:
-            ext = np.zeros((time_steps, self.N_input))
-        self.ext = ext
+
+        if self.ext is None:
+            self.ext = np.zeros((time_steps, self.N_input))
         
+
         self.r = r0
         self.z = np.tanh(self.r)
 
@@ -96,7 +101,7 @@ class RNN(object):
         self.cursor_distance = cursor_distance_initial
         self.cursor_distance_initial = cursor_distance_initial
     
-    def learning(self, T, ext, conditioned_neuron, r0=None, day_id=None, manifold_eig_vec=None, manifold_eig_vals=None):
+    def learning(self, T, conditioned_neuron, r0=None, day_id=None, manifold_eig_vec=None, manifold_eig_vals=None):
 
         self.conditioned_neuron =  conditioned_neuron
         self.current_day_id = day_id
@@ -106,14 +111,14 @@ class RNN(object):
 
         if r0 is None:
             r0 = 2*np.random.randn(self.N)-1.
-        if ext is None:
-            ext = np.zeros((time_steps, self.N_input))
-        self.ext = ext
+        if self.ext is None:
+            self.ext = np.zeros((time_steps, self.N_input))
 
         self.r = r0 # remember to give previous trial r0 to the network
         self.z = np.tanh(self.r)
         
         record_r = np.zeros((time_steps, self.N))
+        record_dw = []
         record_r[0,:] = self.r
 
         for i in range(time_steps-1):
@@ -122,7 +127,7 @@ class RNN(object):
             """
             
             if day_id==0:
-                error_val = self.b*(np.tanh(record_r[i, conditioned_neuron]) - np.tanh(np.mean(record_r[i, :])))
+                error_val = self.b*((np.tanh(record_r[i, conditioned_neuron])))
             
             else:
                 error_val = self.b*(np.tanh(record_r[i, conditioned_neuron]) - np.tanh(record_r[i, :]@manifold_eig_vec[:, manifold_eig_vals.argmax()]))
@@ -144,14 +149,16 @@ class RNN(object):
                 self.e_minus = self.error
                 self.dw = np.outer(np.dot(self.P, self.r), self.e_minus)
                 self.J -= self.dw
+                record_dw.append(self.dw)
+
             
-            self.step(ext[i])
+            self.step(self.ext[i])
             record_r[i+1, :] = self.r
 
-            if self.z[self.conditioned_neuron] >= 0.3:
-                self.cursor_distance -= self.cursor_velocity
+            # if self.z[self.conditioned_neuron] >= 0.3:
+            #     self.cursor_distance -= self.cursor_velocity
 
-        return record_r, np.tanh(record_r)
+        return record_r, np.tanh(record_r), record_dw
 
     def participation_ratio(self, eig_vals):
         return (np.sum(eig_vals.real)**2)/(np.sum(eig_vals.real**2))
@@ -166,7 +173,7 @@ class RNN(object):
         activity = np.zeros((trials*npoints,self.N))
         
         for i in range(trials):
-            z_end, r_simulation = self.simulate(T, ext=ext)
+            z_end, r_simulation = self.simulate(T)
             z_simulation = np.tanh(r_simulation)
             activity[i*npoints:(i+1)*npoints, :] = z_simulation[pulse_end:, :]
             # print(f"{i+1} completed")
@@ -191,9 +198,9 @@ def square_wave(amplitude, start, end, T, dt):
 def initialize_network():
     # initialize the network
     network = RNN(N=N,g=g,p=p,tau=tau,dt=dt,N_input=N_in, T=T)
-    network.add_input(I)
+    ext = network.add_input(I, plot=False)
     # simulate the network for T time and find the manifold, eig_vals etc
-    z_end, r_simulation = network.simulate(T, ext=None)
+    z_end, r_simulation = network.simulate(T)
     dict_manifold.append(network.calculate_manifold(T, 10, I, pulse_end=pulse_end))
 
     # choose a conditioned neuron as one of the top 10 firing neurons -- not doing this
@@ -203,14 +210,14 @@ def initialize_network():
 
     return network, r_simulation, cn
 
-def plot_simulation(r_simulation, list_cn, pr):
+def plot_simulation(list_r_simulation, list_cn, pr):
     # plot dynamics of network during simulation, ordered and unordered. Also calculate the PR, 90% cutoff var.
-    putils.plot_dynamics(np.tanh(r_simulation), list_cn=list_cn)  
+    putils.plot_dynamics(np.tanh(list_r_simulation), list_cn=list_cn)  
     sorted_array, cn_new_idx = putils.plot_dynamics_ordered(np.tanh(r_simulation), criteria="max_initial", sort="descending", list_cn=list_cn)
     print(f"Participation Ratio: {pr}")
     # print(np.where(np.cumsum(eig_val.real)/np.sum(eig_val.real)>0.9)[0][0])
 
-    return sorted_array, cn_new_idx
+    # return sorted_array, cn_new_idx
 
 def simulate_day(network, r_simulation, cn, day_id, input=None):
     # train the network with our learning rule. calculate manifold, eig_vals etc
@@ -219,19 +226,32 @@ def simulate_day(network, r_simulation, cn, day_id, input=None):
     cn = np.random.choice(np.mean(r_simulation[:100, :], axis=0).argsort()[N//2-50:N//2])
     print(f"Condioned Neuron on Day {day_id}: {cn}")
 
-    r_learn, z_learn = network.learning(T, None, conditioned_neuron=cn, r0=r_simulation[-1], day_id=day_id, manifold_eig_vec=dict_manifold[-1][3], manifold_eig_vals=dict_manifold[-1][2])
+    r_learn, z_learn, dw_learn = network.learning(T, conditioned_neuron=cn, r0=r_simulation[-1], day_id=day_id, manifold_eig_vec=dict_manifold[-1][3], manifold_eig_vals=dict_manifold[-1][2])
     dict_manifold.append(network.calculate_manifold(T, 10, I, pulse_end=pulse_end))
-    return r_learn, cn
+    return r_learn, cn, dw_learn
 
-N = 500
-g = 1.2
+def plot_cn(list_r, list_cn):
+    fig = plt.figure()
+    gs = GridSpec(nrows=len(list_cn), ncols=1, )
+    for i in range(len(list_cn)):
+        ax = fig.add_subplot(gs[i, 0])
+        for j in range(len(list_r)):
+            ax.plot(list_r[j][:, list_cn[i]])
+            ax.set_title(f"CN of Day {i} across days")
+
+    plt.show()
+
+
+N = 100
+g = 1.3
 p = 0.1
 tau = 0.1
 dt = 0.01
 N_in = 1
 T = 10
-n_days = 2
+n_days = 1
 dict_manifold = []
+list_dayend_r = []
 list_cn = []
 
 pulse_amplitude = 1
@@ -245,16 +265,19 @@ I = square_wave(pulse_amplitude, pulse_start, pulse_end, T, dt)
 network, r_simulation, cn = initialize_network()
 list_cn.append(cn)
 print(list_cn)
-plot_simulation(r_simulation, list_cn, dict_manifold[0][4])
-
+# plot_simulation(r_simulation, list_cn, dict_manifold[0][4])
+list_dayend_r.append(r_simulation)
 # print(r_simulation[-1])
 
 r_learn = r_simulation
-for i in range(n_days):
-    r_learn, cn = simulate_day(network, r_learn, cn, i+1, input=I)
-    list_cn.append(cn)
-    plot_simulation(r_learn, list_cn, dict_manifold[i][4])
+# for i in range(n_days):
+r_learn, cn, dw_learn = simulate_day(network, r_learn, cn, 1, input=I)
+list_dayend_r.append(r_learn)
+plot_simulation(list_dayend_r, list_cn, dict_manifold[0][4])
+putils.plot_weight_hist(dw_learn)
+# list_cn.append(cn)
 
+# plot_cn(list_dayend_r, list_cn[:-1])
 """
 simulate → calculate manifold → feedback learning with cursor velocity → simulate → calculate manifold →   
 day 1 complete → repeat for day 2 with different conditioned neuron
