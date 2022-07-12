@@ -24,13 +24,15 @@ def plot_dynamics(list_recordings, list_cn=None):
     fig = plt.figure()
     gs = GridSpec(nrows=2, ncols=2, height_ratios=[1,4])
     ax0 = fig.add_subplot(gs[0, :])
-    for i in range(len(list_recordings)):
-        ax0.plot(list_recordings[i][:,list_cn])
-    ax0.set_ylim(-1., 1.)
+    # for i in range(len(list_recordings)):
+    #     print(list_recordings)
+    ax0.plot(list_recordings[0][:,list_cn])
+    ax0.plot(list_recordings[-1][:,list_cn])
+    # ax0.set_ylim(-1., 1.)
     ax0.legend(["Before Learning", "End of Day 1"])
 
     ax1 = fig.add_subplot(gs[1, 0])
-    im = ax1.imshow(list_recordings[0].T, aspect="auto", cmap="Spectral", origin="lower")
+    im = ax1.imshow(list_recordings[0].T, aspect="auto", cmap="seismic", origin="lower")
     ax1.set_yticks(list_cn)
     s = "Day_id, CN_id"
     # list_ylabels = [s + str(i) + str(x) for (i,x) in enumerate(list_cn)]
@@ -40,7 +42,7 @@ def plot_dynamics(list_recordings, list_cn=None):
     # fig.colorbar(im, cax=ax1, orientation='horizontal')
 
     ax2 = fig.add_subplot(gs[1, 1])
-    im = ax2.imshow(list_recordings[1].T, aspect="auto", cmap="Spectral", origin="lower")
+    im = ax2.imshow(list_recordings[-1].T, aspect="auto", cmap="seismic", origin="lower")
     ax2.set_yticks(list_cn)
     s = "Day_id, CN_id"
     # list_ylabels = [s + str(i) + str(x) for (i,x) in enumerate(list_cn)]

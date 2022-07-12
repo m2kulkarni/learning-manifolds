@@ -19,7 +19,7 @@ class RNN(object):
     """
     def __init__(self, N=500, g=1.5, p=0.1, 
                 tau=0.1, dt=0.01, N_input=2, 
-                N_out=1, T=1, b=0.1):
+                N_out=1, T=1, b=0.5):
 
         self.N = N
         self.g = g
@@ -70,8 +70,9 @@ class RNN(object):
         time = np.arange(0, T, self.dt)
         time_steps = len(time)
 
-        if r0 is None:
-            r0 = 2*np.random.randn(self.N)-1.
+        # if r0 is None:
+        r0 = 2*np.random.randn(self.N)-1.
+        r0 = r0*0
 
         if self.ext is None:
             self.ext = np.zeros((time_steps, self.N_input))
@@ -109,8 +110,9 @@ class RNN(object):
         time_steps = int(T/self.dt)
         self.P = np.eye(self.N, self.N)*0.05
 
-        if r0 is None:
-            r0 = 2*np.random.randn(self.N)-1.
+        # if r0 is None:
+        r0 = 2*np.random.randn(self.N)-1.
+        r0 = r0*0
         if self.ext is None:
             self.ext = np.zeros((time_steps, self.N_input))
 
@@ -120,17 +122,25 @@ class RNN(object):
         record_r = np.zeros((time_steps, self.N))
         record_dw = []
         record_r[0,:] = self.r
+        record_err = []
 
         for i in range(time_steps-1):
             """
             abcdefghijklmnopqrstuvwxyz
             """
             
-            if day_id==0:
-                error_val = self.b*((np.tanh(record_r[i, conditioned_neuron])))
+            # if day_id==0:
+            #     error_val = self.b*((np.tanh(record_r[i, conditioned_neuron])))
+            #
+            # else:
+            #     error_val = self.b*(np.tanh(record_r[i, conditioned_neuron]) - np.tanh(record_r[i, :]@manifold_eig_vec[:, manifold_eig_vals.argmax()]))
             
-            else:
-                error_val = self.b*(np.tanh(record_r[i, conditioned_neuron]) - np.tanh(record_r[i, :]@manifold_eig_vec[:, manifold_eig_vals.argmax()]))
+            # if record_r[i, self.conditioned_neuron] < 0.9:
+            error_val = self.b*(1 - np.tanh(record_r[i, self.conditioned_neuron]))
+            # else:
+            #     error_val = np.tanh(record_r[i, self.conditioned_neuron]) - np.mean(record_r[:10, self.conditioned_neuron])
+            print(error_val)
+            record_err.append(error_val)
                 # this looks good except only 1 max eig_vec is taken, i.e only the first dimension. This is something like
                 # learning vector. ask kayvon
 
@@ -141,7 +151,7 @@ class RNN(object):
 
             # print(error_val)
             # print(self.W_fb.shape)
-            self.error = self.W_fb*error_val
+            self.error = -self.W_fb*error_val
 
             if i%2 == 0:
                 Pr = np.dot(self.P, self.r)
@@ -158,7 +168,7 @@ class RNN(object):
             # if self.z[self.conditioned_neuron] >= 0.3:
             #     self.cursor_distance -= self.cursor_velocity
 
-        return record_r, np.tanh(record_r), record_dw
+        return record_r, np.tanh(record_r), record_dw, record_err
 
     def participation_ratio(self, eig_vals):
         return (np.sum(eig_vals.real)**2)/(np.sum(eig_vals.real**2))
@@ -223,12 +233,12 @@ def simulate_day(network, r_simulation, cn, day_id, input=None):
     # train the network with our learning rule. calculate manifold, eig_vals etc
 
     # change the cn, choose a low activity neuron as conditioned neuron for other days
-    cn = np.random.choice(np.mean(r_simulation[:100, :], axis=0).argsort()[N//2-50:N//2])
+    # cn = np.random.choice(np.mean(r_simulation[:100, :], axis=0).argsort()[N//2-50:N//2])
     print(f"Condioned Neuron on Day {day_id}: {cn}")
 
-    r_learn, z_learn, dw_learn = network.learning(T, conditioned_neuron=cn, r0=r_simulation[-1], day_id=day_id, manifold_eig_vec=dict_manifold[-1][3], manifold_eig_vals=dict_manifold[-1][2])
-    dict_manifold.append(network.calculate_manifold(T, 10, I, pulse_end=pulse_end))
-    return r_learn, cn, dw_learn
+    r_learn, z_learn, dw_learn, err_learn = network.learning(T, conditioned_neuron=cn, r0=r_simulation[-1], day_id=day_id, manifold_eig_vec=dict_manifold[-1][3], manifold_eig_vals=dict_manifold[-1][2])
+    # dict_manifold.append(network.calculate_manifold(T, 10, I, pulse_end=pulse_end))
+    return r_learn, cn, dw_learn, err_learn
 
 def plot_cn(list_r, list_cn):
     fig = plt.figure()
@@ -248,15 +258,15 @@ p = 0.1
 tau = 0.1
 dt = 0.01
 N_in = 1
-T = 10
+T = 2
 n_days = 1
 dict_manifold = []
 list_dayend_r = []
 list_cn = []
 
 pulse_amplitude = 1
-pulse_start = 10    
-pulse_end = 30
+pulse_start = 10
+pulse_end = 20
 pulse_length = pulse_end-pulse_start
 
 # make the input pulse
@@ -269,13 +279,17 @@ print(list_cn)
 list_dayend_r.append(r_simulation)
 # print(r_simulation[-1])
 
+error = []
 r_learn = r_simulation
-# for i in range(n_days):
-r_learn, cn, dw_learn = simulate_day(network, r_learn, cn, 1, input=I)
-list_dayend_r.append(r_learn)
-plot_simulation(list_dayend_r, list_cn, dict_manifold[0][4])
-putils.plot_weight_hist(dw_learn)
+for i in range(100):
+    r_learn, cn, dw_learn, err_learn = simulate_day(network, r_learn, cn, 1, input=I)
+    list_dayend_r.append(r_learn)
+    error.append(np.mean(err_learn))
+plot_simulation(list_dayend_r, [cn], dict_manifold[0][4])
+# putils.plot_weight_hist(dw_learn)
 # list_cn.append(cn)
+plt.plot(error)
+plt.show()
 
 # plot_cn(list_dayend_r, list_cn[:-1])
 """
